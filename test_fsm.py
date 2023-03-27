@@ -88,7 +88,13 @@ class Test(unittest.TestCase):
     def test_follower_append_entries(self):
         # TODO: implement
         fsm = self._fsm()
-        fsm.process(AppendEntriesRequest(term=1))
+        fsm.process(AppendEntriesRequest(
+            term=1,
+            leaderId=2,
+            prevLogIndex=0,
+            prevLogTerm=0,
+            leaderCommit=0
+        ))
 
     def test_candidate_initiate_election(self):
         messages=[]
@@ -101,8 +107,8 @@ class Test(unittest.TestCase):
         self.assertEqual(term+1, fsm.state.currentTerm) # update term
         self.assertEqual(fsm.ts.now(), fsm.last_time) # update last time
         self.assertEqual(len(messages), 2)
-        self.assertEqual(messages[0], RequestVoteRequest(term+1, fsm.id, 1, 1))
-        self.assertEqual(messages[1], RequestVoteRequest(term+1, fsm.id, 1, 1))
+        self.assertEqual(messages[0], RequestVoteRequest(term+1, fsm.id, 0, 0))
+        self.assertEqual(messages[1], RequestVoteRequest(term+1, fsm.id, 0, 0))
 
     def test_candidate_vote_request_small_term(self):
         fsm = self._fsm()
@@ -141,6 +147,7 @@ class Test(unittest.TestCase):
         fsm.ts.advance(timedelta(seconds=10))
         fsm.become(fsm.candidate)
         fsm.process(RequestVoteResponse(2, True))
+        # TODO: use server id
         self.assertEqual(fsm.state_func, fsm.candidate)
         fsm.process(RequestVoteResponse(2, True))
         self.assertEqual(fsm.state_func, fsm.leader)

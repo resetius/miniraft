@@ -15,7 +15,7 @@ class LogEntry:
 class State:
     currentTerm: int = 1
     votedFor: int = 0
-    log = [LogEntry()]
+    log = []
 
 @dataclass(frozen=True,init=True)
 class VolatileState:
@@ -79,9 +79,9 @@ class FSM:
             accept=False
             if state.votedFor == 0:
                 accept=True
-            elif state.votedFor == message.candidateId and message.lastLogTerm > state.log[-1].term:
+            elif state.votedFor == message.candidateId and message.lastLogTerm > self._log_term(state):
                 accept=True
-            elif state.votedFor == message.candidateId and message.lastLogTerm == state.log[-1].term and message.lastLogIndex >= len(state.log):
+            elif state.votedFor == message.candidateId and message.lastLogTerm == self._log_term(state) and message.lastLogIndex >= len(state.log):
                 accept=True
 
             return Result(
@@ -89,6 +89,17 @@ class FSM:
                 message=RequestVoteResponse(message.term, accept),
                 recepient=message.candidateId,
             )
+
+    def _log_term(self, state):
+        return 0 if len(state.log)==0 else state.log[-1].term
+
+    def _create_vote(self, state):
+        return RequestVoteRequest(
+            term=state.currentTerm+1,
+            candidateId=self.id,
+            lastLogIndex=len(state.log),
+            lastLogTerm=0 if len(state.log)==0 else state.log[-1].term
+        )
 
     def follower(self, now: datetime, last: datetime, message, state: State, volatile_state: VolatileState) -> Result:
         if isinstance(message, Timeout):
@@ -111,7 +122,7 @@ class FSM:
                     next_state=State(currentTerm=state.currentTerm+1,votedFor=self.id),
                     next_volatile_state=VolatileState(votes=1),
                     update_last_time=True,
-                    message=RequestVoteRequest(state.currentTerm+1, self.id, 1,1),
+                    message=self._create_vote(state),
                     recepient=-1
                 )
         elif isinstance(message, RequestVoteRequest):
@@ -151,7 +162,13 @@ class FSM:
                 return Result(
                     update_last_time=True,
                     recepient=-1,
-                    message=AppendEntriesRequest(state.currentTerm)
+                    message=AppendEntriesRequest(
+                        term=state.currentTerm,
+                        leaderId=self.id,
+                        prevLogIndex=0,
+                        prevLogTerm=0,
+                        leaderCommit=0
+                    )
                 )
         elif isinstance(message, AppendEntriesResponse):
             # TODO: Response from follower

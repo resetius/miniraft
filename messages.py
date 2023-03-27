@@ -18,6 +18,11 @@ class RequestVoteResponse:
 @dataclass
 class AppendEntriesRequest:
     term: int
+    leaderId: int
+    prevLogIndex: int
+    prevLogTerm: int
+    leaderCommit: int
+    entries = []
 
 @dataclass
 class AppendEntriesResponse:
