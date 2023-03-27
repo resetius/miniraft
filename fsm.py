@@ -39,7 +39,7 @@ class FSM:
         self.id = id
         self.nodes = nodes
         self.ts = ts
-        self.min_votes = (len(nodes)+len(nodes)+1)//2
+        self.min_votes = (len(nodes)+2)//2
         self.state = State()
         self.volatile_state = VolatileState()
         self.state_func = self.follower
@@ -70,14 +70,14 @@ class FSM:
         )
 
     def on_request_vote(self, message: RequestVoteRequest, state: State, volatile_state: VolatileState):
-        if message.term < state.currentTerm:            
-            return Result(                
+        if message.term < state.currentTerm:
+            return Result(
                 message=RequestVoteResponse(state.currentTerm, False),
                 recepient=message.candidateId,
             )
         elif message.term == state.currentTerm:
             accept=False
-            if state.votedFor == 0:                
+            if state.votedFor == 0:
                 accept=True
             elif state.votedFor == message.candidateId and message.lastLogTerm > state.log[-1].term:
                 accept=True
@@ -162,7 +162,7 @@ class FSM:
         elif isinstance(message, RequestVoteRequest):
             return self.on_request_vote(message, state, volatile_state)
         elif isinstance(message, RequestVoteResponse):
-            # Bad request
+            # skip additional votes
             pass
 
         return None

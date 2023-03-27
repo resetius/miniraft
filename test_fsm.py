@@ -4,10 +4,10 @@ from fsm import *
 from timesource import *
 
 class FakeNode:
-    def __init__(self, on_send=None):        
+    def __init__(self, on_send=None):
         self.on_send=on_send
         if self.on_send is None:
-            self.on_send = self._on_send        
+            self.on_send = self._on_send
 
     def start(self, unused):
         pass
@@ -18,16 +18,19 @@ class FakeNode:
     def send(self, message):
         return self.on_send(message)
 
-class Test(unittest.TestCase):    
-    def _fsm(self, on_send=None):
+class Test(unittest.TestCase):
+    def _fsm(self, on_send=None, count=3):
         ts = FakeTimeSource(datetime.now())
-        fsm = FSM(1, {2:FakeNode(on_send),3:FakeNode(on_send)}, ts)
+        nodes = {}
+        for i in range(2,count+1):
+            nodes[i] = FakeNode(on_send)
+        fsm = FSM(1, nodes, ts)
         return fsm
 
     def test_initial(self):
         fsm = self._fsm()
         self.assertEqual(fsm.state_func, fsm.follower)
-    
+
     def test_become(self):
         fsm = self._fsm()
         self.assertEqual(fsm.state_func, fsm.follower)
@@ -115,6 +118,32 @@ class Test(unittest.TestCase):
         self.assertEqual(result.message, RequestVoteResponse(fsm.state.currentTerm, True))
         self.assertEqual(result.recepient, 2)
         self.assertEqual(fsm.state.currentTerm, 1)
+
+    def test_candidate_vote_after_start(self):
+        messages = []
+        on_send = lambda y: messages.append(y)
+        fsm = self._fsm(on_send)
+        self.assertEqual(fsm.state_func, fsm.follower)
+        fsm.ts.advance(timedelta(seconds=10))
+        fsm.become(fsm.candidate) # initiates election
+        self.assertEqual(fsm.state.votedFor, 1)
+        self.assertEqual(fsm.state.currentTerm, 2)
+        fsm.process(RequestVoteRequest(2, 2, 1, 1))
+        self.assertEqual(messages[-1].voteGranted, False)
+
+        # request with higher term => follower
+        fsm.process(RequestVoteRequest(3, 3, 1, 1))
+        self.assertEqual(fsm.state.votedFor, 3)
+        self.assertEqual(messages[-1].voteGranted, True)
+
+    def test_election_5_nodes(self):
+        fsm = self._fsm(None, 5)
+        fsm.ts.advance(timedelta(seconds=10))
+        fsm.become(fsm.candidate)
+        fsm.process(RequestVoteResponse(2, True))
+        self.assertEqual(fsm.state_func, fsm.candidate)
+        fsm.process(RequestVoteResponse(2, True))
+        self.assertEqual(fsm.state_func, fsm.leader)
 
 if __name__ == "__main__":
     unittest.main()
