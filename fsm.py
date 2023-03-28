@@ -12,7 +12,7 @@ from timesource import *
 class State:
     currentTerm: int = 1
     votedFor: int = 0
-    log = []
+    log: List[LogEntry] = field(default_factory=list)
 
 @dataclass(frozen=True,init=True)
 class VolatileState:
@@ -218,9 +218,13 @@ class FSM:
                     return Result(
                         next_volatile_state=volatile_state.with_next_index({nodeId: max(1, volatile_state.nextIndex[nodeId]-1)})
                     )
-        elif isinstance(message, AppendEntriesRequest):
-            # Bad request
-            pass
+        elif isinstance(message, CommandRequest):
+            # client request
+            log=state.log
+            log.append(LogEntry(term=state.currentTerm))
+            return Result(
+                next_state=State(currentTerm=state.currentTerm, votedFor=state.votedFor, log=log)
+            )
         elif isinstance(message, RequestVoteRequest):
             return self.on_request_vote(message, state, volatile_state)
         elif isinstance(message, RequestVoteResponse):
@@ -237,7 +241,7 @@ class FSM:
 
     def process(self, message, sock=None):
         now = self.ts.now()
-        if not isinstance(message,Timeout) and message.term > self.state.currentTerm:
+        if not isinstance(message,Timeout) and not isinstance(message,CommandRequest) and message.term > self.state.currentTerm:
             self.state=State(currentTerm=message.term, votedFor=0)
             self.state_func=self.follower
         self.apply_result(now, self.state_func(now, self.last_time, message, self.state, self.volatile_state), sock)

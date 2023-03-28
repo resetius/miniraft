@@ -43,6 +43,10 @@ class AppendEntriesResponse:
     success: bool
     matchIndex: int # missing field in raft.pdf
 
+@dataclass
+class CommandRequest:
+    id: int
+
 class Timeout:
     Election = timedelta(seconds = 5)
     Heartbeat = timedelta(seconds = 2)

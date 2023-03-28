@@ -31,7 +31,7 @@ class Node:
             self.writer.close()
         self.connected = False
         if not self.connect_task:
-            self.connect_task = asyncio.create_task(self._connect())
+            self.connect_task = asyncio.create_task(self.connect())
 
     async def drain(self):
         try:
@@ -40,7 +40,7 @@ class Node:
         except:
             self._reconnect()
 
-    async def _connect(self):
+    async def connect(self):
         while not self.connected:
             try:
                 self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
@@ -48,7 +48,8 @@ class Node:
                 self.connected = True
                 if self.io_task:
                     self.io_task.cancel()
-                self.io_task = asyncio.create_task(self.handler(self.reader, self.writer))
+                if self.handler:
+                    self.io_task = asyncio.create_task(self.handler(self.reader, self.writer))
             except:
                 print("[%s:%d]: Retry in 5 secs"%(self.host,self.port))
                 await asyncio.sleep(5)
