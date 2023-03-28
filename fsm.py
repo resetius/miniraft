@@ -20,10 +20,10 @@ class VolatileState:
     lastApplied: int = 0
     nextIndex: Dict[int,int] = field(default_factory=lambda: defaultdict(int))
     matchIndex: Dict[int,int] = field(default_factory=lambda: defaultdict(int))
-    votes: int = 0
+    votes: Dict[int,bool] = field(default_factory=lambda: defaultdict(bool))
 
-    def with_set_vote(self, vote):
-        return VolatileState(commitIndex=self.commitIndex, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=vote)
+    def with_set_votes(self, votes):
+        return VolatileState(commitIndex=self.commitIndex, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=votes)
 
     def with_last_applied(self, index):
         return VolatileState(commitIndex=self.commitIndex, lastApplied=index, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes)
@@ -39,9 +39,6 @@ class VolatileState:
 
     def with_commit_index(self, index):
         return VolatileState(commitIndex=index, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes)
-
-    def with_vote(self):
-        return VolatileState(commitIndex=self.commitIndex, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes+1)
 
     def with_next_index(self, d):
         return VolatileState(commitIndex=self.commitIndex, lastApplied=self.lastApplied, nextIndex=self.nextIndex|d, matchIndex=self.matchIndex, votes=self.votes)
@@ -184,7 +181,7 @@ class FSM:
             if (now - last > Timeout.Election):
                 return Result(
                     next_state=State(currentTerm=state.currentTerm+1,votedFor=self.id),
-                    next_volatile_state=volatile_state.with_set_vote(1),
+                    next_volatile_state=VolatileState(),
                     update_last_time=True,
                     message=self._create_vote(state)
                 )
@@ -199,20 +196,26 @@ class FSM:
                     update_last_time=True
                 )
             if message.voteGranted and message.term == state.currentTerm:
-                votes = votes+1
-            print("Need/total %d/%d"%(self.min_votes,votes))
-            if votes >= self.min_votes:
+                votes = votes|{message.src: True}
+
+            nvotes = len(list(filter(lambda x:x, votes.values())))+1
+            print("Need/total %d/%d"%(self.min_votes,nvotes))
+            if nvotes >= self.min_votes:
                 value = len(state.log)+1
-                next_indices = {key: value for key in range(1,len(self.nodes)+2)}
+                next_indices = {key: value for key in self.nodes.keys()}
                 return Result(
                     next_state=State(currentTerm=state.currentTerm,votedFor=state.votedFor),
-                    next_volatile_state=volatile_state.with_set_vote(votes).with_next_index(next_indices),
+                    next_volatile_state=VolatileState(
+                        commitIndex=volatile_state.commitIndex,
+                        lastApplied=volatile_state.lastApplied,
+                        nextIndex=next_indices,
+                    ),
                     next_state_func=self.leader,
                     update_last_time=True
                 )
             return Result(
                 next_state=State(currentTerm=state.currentTerm,votedFor=state.votedFor),
-                next_volatile_state=volatile_state.with_set_vote(votes),
+                next_volatile_state=volatile_state.with_set_votes(votes),
             )
         elif isinstance(message, AppendEntriesRequest):
             return self.on_append_entries(message, state, volatile_state)

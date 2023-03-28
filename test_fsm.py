@@ -147,9 +147,12 @@ class Test(unittest.TestCase):
         fsm.ts.advance(timedelta(seconds=10))
         fsm.become(fsm.candidate)
         fsm.process(RequestVoteResponse(src=2,dst=1,term=2, voteGranted=True))
-        # TODO: use server id
+
         self.assertEqual(fsm.state_func, fsm.candidate)
         fsm.process(RequestVoteResponse(src=2,dst=1,term=2, voteGranted=True))
+        self.assertEqual(fsm.state_func, fsm.candidate)
+
+        fsm.process(RequestVoteResponse(src=3,dst=1,term=2, voteGranted=True))
         self.assertEqual(fsm.state_func, fsm.leader)
 
     def test_commit_advance(self):
