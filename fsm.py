@@ -8,10 +8,6 @@ from messages import *
 from typing import *
 from timesource import *
 
-@dataclass(frozen=True)
-class LogEntry:
-    term: int = 1
-
 @dataclass(frozen=True,init=True)
 class State:
     currentTerm: int = 1
@@ -30,7 +26,7 @@ class VolatileState:
         return VolatileState(commitIndex=self.commitIndex, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=vote)
 
     def with_commit_index(self, index):
-       return VolatileState(commitIndex=index, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes)
+        return VolatileState(commitIndex=index, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes)
 
     def with_vote(self):
         return VolatileState(commitIndex=self.commitIndex, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes+1)
@@ -48,7 +44,7 @@ class Result:
     next_state_func: Any = None
     update_last_time: bool = False
     message: Any = None
-    recepient: int = 0
+    messages: Any = None
 
 class FSM:
     def __init__(self, id: int, nodes, ts: TimeSource = TimeSource()):
@@ -68,7 +64,7 @@ class FSM:
 
         if message.term < state.currentTerm:
             return Result(
-                message=AppendEntriesResponse(state.currentTerm, success=False, nodeId=self.id, matchIndex=0),
+                message=AppendEntriesResponse(src=self.id, dst=message.src, term=state.currentTerm, success=False, nodeId=self.id, matchIndex=0),
                 update_last_time=True
             )
 
@@ -94,7 +90,7 @@ class FSM:
             commitIndex=max(commitIndex, message.leaderCommit)
 
         return Result(
-            message=AppendEntriesResponse(message.term, success=success, nodeId=self.id, matchIndex=matchIndex),
+            message=AppendEntriesResponse(src=self.id, dst=message.src, term=message.term, success=success, matchIndex=matchIndex),
             next_volatile_state=volatile_state.with_commit_index(commitIndex),
             next_state_func=self.follower,
             update_last_time=True
@@ -103,8 +99,7 @@ class FSM:
     def on_request_vote(self, message: RequestVoteRequest, state: State, volatile_state: VolatileState):
         if message.term < state.currentTerm:
             return Result(
-                message=RequestVoteResponse(state.currentTerm, False),
-                recepient=message.candidateId,
+                message=RequestVoteResponse(src=self.id, dst=message.src, term=state.currentTerm, voteGranted=False)
             )
         elif message.term == state.currentTerm:
             accept=False
@@ -117,8 +112,7 @@ class FSM:
 
             return Result(
                 next_state=State(currentTerm=message.term, votedFor=message.candidateId),
-                message=RequestVoteResponse(message.term, accept),
-                recepient=message.candidateId,
+                message=RequestVoteResponse(src=self.id, dst=message.src, term=message.term, voteGranted=accept)
             )
 
     def _log_term(self, state: State, index: int = -1):
@@ -130,10 +124,25 @@ class FSM:
 
     def _create_vote(self, state):
         return RequestVoteRequest(
+            src=self.id,
+            dst=0,
             term=state.currentTerm+1,
             candidateId=self.id,
             lastLogIndex=len(state.log),
             lastLogTerm=0 if len(state.log)==0 else state.log[-1].term
+        )
+
+    def _create_append_entries(self, state, volatile_state, nodeId):
+        prevIndex = volatile_state.nextIndex[nodeId] - 1;
+        return AppendEntriesRequest(
+            src=self.id,
+            dst=nodeId,
+            term=state.currentTerm,
+            leaderId=self.id,
+            prevLogIndex=prevIndex,
+            prevLogTerm=self._log_term(state, prevIndex),
+            entries=[], # TODO
+            leaderCommit=volatile_state.commitIndex
         )
 
     def follower(self, now: datetime, last: datetime, message, state: State, volatile_state: VolatileState) -> Result:
@@ -157,8 +166,7 @@ class FSM:
                     next_state=State(currentTerm=state.currentTerm+1,votedFor=self.id),
                     next_volatile_state=volatile_state.with_set_vote(1),
                     update_last_time=True,
-                    message=self._create_vote(state),
-                    recepient=-1
+                    message=self._create_vote(state)
                 )
         elif isinstance(message, RequestVoteRequest):
             return self.on_request_vote(message, state, volatile_state)
@@ -196,18 +204,11 @@ class FSM:
             if (now - last) > Timeout.Heartbeat:
                 return Result(
                     update_last_time=True,
-                    recepient=-1,
-                    message=AppendEntriesRequest(
-                        term=state.currentTerm,
-                        leaderId=self.id,
-                        prevLogIndex=0,
-                        prevLogTerm=0,
-                        leaderCommit=volatile_state.commitIndex
-                    )
+                    messages=[self._create_append_entries(state, volatile_state, nodeId) for nodeId in self.nodes.keys()]
                 )
         elif isinstance(message, AppendEntriesResponse):
             if message.term == state.currentTerm:
-                nodeId=message.nodeId
+                nodeId=message.src
                 if message.success:
                     matchIndex = max(volatile_state.matchIndex[nodeId], message.matchIndex)
                     return Result(
@@ -250,16 +251,15 @@ class FSM:
             if result.next_volatile_state:
                 self.volatile_state = result.next_volatile_state
             if result.message:
-                if result.recepient == -1:
+                if result.message.dst == 0:
                     for k,v in self.nodes.items():
                         v.send(result.message)
-                elif result.recepient == 0:
-                    if sock:
-                        header, payload = serialize(result.message)
-                        sock.write(header)
-                        sock.write(payload)
                 else:
-                    self.nodes[result.recepient].send(result.message)
+                    self.nodes[result.message.dst].send(result.message)
+            if result.messages:
+                for m in result.messages:
+                    self.nodes[m.dst].send(m)
+
             if result.next_state_func:
                 self.become(result.next_state_func)
 
@@ -283,6 +283,13 @@ class FSM:
             await asyncio.sleep(0.1)
 
     async def idle(self):
+        t0=datetime.now()
+        dt=timedelta(seconds=2)
         while True:
             self.process(Timeout())
+            t1=datetime.now()
+            if t1>t0+dt:
+                print("State: %s %s"%(self.state,self.volatile_state))
+                t0=t1
             await asyncio.sleep(0.01)
+

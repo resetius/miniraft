@@ -89,6 +89,8 @@ class Test(unittest.TestCase):
         # TODO: implement
         fsm = self._fsm()
         fsm.process(AppendEntriesRequest(
+            src=2,
+            dst=1,
             term=1,
             leaderId=2,
             prevLogIndex=0,
@@ -107,22 +109,20 @@ class Test(unittest.TestCase):
         self.assertEqual(term+1, fsm.state.currentTerm) # update term
         self.assertEqual(fsm.ts.now(), fsm.last_time) # update last time
         self.assertEqual(len(messages), 2)
-        self.assertEqual(messages[0], RequestVoteRequest(term+1, fsm.id, 0, 0))
-        self.assertEqual(messages[1], RequestVoteRequest(term+1, fsm.id, 0, 0))
+        self.assertEqual(messages[0], RequestVoteRequest(1,0,term+1, fsm.id, 0, 0))
+        self.assertEqual(messages[1], RequestVoteRequest(1,0,term+1, fsm.id, 0, 0))
 
     def test_candidate_vote_request_small_term(self):
         fsm = self._fsm()
         ts=fsm.ts
-        result = fsm.candidate(ts.now(),ts.now(),RequestVoteRequest(0, 2, 1, 1), fsm.state, fsm.volatile_state)
-        self.assertEqual(result.message, RequestVoteResponse(fsm.state.currentTerm, False))
-        self.assertEqual(result.recepient, 2)
+        result = fsm.candidate(ts.now(),ts.now(),RequestVoteRequest(2, 1, 0, 2, 1, 1), fsm.state, fsm.volatile_state)
+        self.assertEqual(result.message, RequestVoteResponse(1,2,fsm.state.currentTerm, False))
 
     def test_candidate_vote_request_ok_term(self):
         fsm = self._fsm()
         ts=fsm.ts
-        result = fsm.candidate(ts.now(),ts.now(),RequestVoteRequest(1, 2, 1, 1), fsm.state, fsm.volatile_state)
-        self.assertEqual(result.message, RequestVoteResponse(fsm.state.currentTerm, True))
-        self.assertEqual(result.recepient, 2)
+        result = fsm.candidate(ts.now(),ts.now(),RequestVoteRequest(2, 1, 1, 2, 1, 1), fsm.state, fsm.volatile_state)
+        self.assertEqual(result.message, RequestVoteResponse(1, 2, fsm.state.currentTerm, True))
         self.assertEqual(fsm.state.currentTerm, 1)
 
     def test_candidate_vote_after_start(self):
@@ -134,11 +134,11 @@ class Test(unittest.TestCase):
         fsm.become(fsm.candidate) # initiates election
         self.assertEqual(fsm.state.votedFor, 1)
         self.assertEqual(fsm.state.currentTerm, 2)
-        fsm.process(RequestVoteRequest(2, 2, 1, 1))
+        fsm.process(RequestVoteRequest(2,1,2, 2, 1, 1))
         self.assertEqual(messages[-1].voteGranted, False)
 
         # request with higher term => follower
-        fsm.process(RequestVoteRequest(3, 3, 1, 1))
+        fsm.process(RequestVoteRequest(2,1,3, 3, 1, 1))
         self.assertEqual(fsm.state.votedFor, 3)
         self.assertEqual(messages[-1].voteGranted, True)
 
@@ -146,10 +146,10 @@ class Test(unittest.TestCase):
         fsm = self._fsm(None, 5)
         fsm.ts.advance(timedelta(seconds=10))
         fsm.become(fsm.candidate)
-        fsm.process(RequestVoteResponse(2, True))
+        fsm.process(RequestVoteResponse(src=2,dst=1,term=2, voteGranted=True))
         # TODO: use server id
         self.assertEqual(fsm.state_func, fsm.candidate)
-        fsm.process(RequestVoteResponse(2, True))
+        fsm.process(RequestVoteResponse(src=2,dst=1,term=2, voteGranted=True))
         self.assertEqual(fsm.state_func, fsm.leader)
 
 if __name__ == "__main__":

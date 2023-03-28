@@ -1,10 +1,17 @@
 import pickle
 import struct
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import *
+from typing import *
+
+@dataclass(frozen=True)
+class LogEntry:
+    term: int = 1
 
 @dataclass
 class RequestVoteRequest:
+    src: int
+    dst: int
     term: int
     candidateId: int
     lastLogIndex: int
@@ -12,22 +19,27 @@ class RequestVoteRequest:
 
 @dataclass
 class RequestVoteResponse:
+    src: int
+    dst: int
     term: int
     voteGranted: bool
 
 @dataclass
 class AppendEntriesRequest:
+    src: int
+    dst: int
     term: int
     leaderId: int
     prevLogIndex: int
     prevLogTerm: int
     leaderCommit: int
-    entries = []
+    entries: List[LogEntry] = field(default_factory=list)
 
 @dataclass
 class AppendEntriesResponse:
+    src: int
+    dst: int
     term: int
-    nodeId: int
     success: bool
     matchIndex: int # missing field in raft.pdf
 
