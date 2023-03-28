@@ -25,6 +25,18 @@ class VolatileState:
     def with_set_vote(self, vote):
         return VolatileState(commitIndex=self.commitIndex, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=vote)
 
+    def with_last_applied(self, index):
+        return VolatileState(commitIndex=self.commitIndex, lastApplied=index, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes)
+
+    def with_commit_advance(self, servers):
+        indices = list(self.matchIndex.values())
+        indices.append(self.lastApplied)
+        while len(indices)<servers:
+            indices.append(0)
+        indices.sort()
+        commitIndex=max(self.commitIndex, indices[servers//2])
+        return VolatileState(commitIndex=commitIndex, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes)
+
     def with_commit_index(self, index):
         return VolatileState(commitIndex=index, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes)
 
@@ -134,6 +146,10 @@ class FSM:
 
     def _create_append_entries(self, state, volatile_state, nodeId):
         prevIndex = volatile_state.nextIndex[nodeId] - 1;
+        lastIndex = min(prevIndex+1,len(state.log))
+        if volatile_state.matchIndex[nodeId]+1 < volatile_state.nextIndex[nodeId]:
+            lastIndex = prevIndex
+
         return AppendEntriesRequest(
             src=self.id,
             dst=nodeId,
@@ -141,7 +157,7 @@ class FSM:
             leaderId=self.id,
             prevLogIndex=prevIndex,
             prevLogTerm=self._log_term(state, prevIndex),
-            entries=[], # TODO
+            entries=state.log[volatile_state.commitIndex:lastIndex],
             leaderCommit=volatile_state.commitIndex
         )
 
@@ -212,7 +228,7 @@ class FSM:
                 if message.success:
                     matchIndex = max(volatile_state.matchIndex[nodeId], message.matchIndex)
                     return Result(
-                        next_volatile_state=volatile_state.with_match_index({nodeId: matchIndex}).with_next_index({nodeId: message.matchIndex+1})
+                        next_volatile_state=volatile_state.with_match_index({nodeId: matchIndex}).with_next_index({nodeId: message.matchIndex+1}).with_commit_advance(len(self.nodes)+1)
                     )
                 else:
                     return Result(
@@ -223,7 +239,8 @@ class FSM:
             log=state.log
             log.append(LogEntry(term=state.currentTerm))
             return Result(
-                next_state=State(currentTerm=state.currentTerm, votedFor=state.votedFor, log=log)
+                next_state=State(currentTerm=state.currentTerm, votedFor=state.votedFor, log=log),
+                next_volatile_state=volatile_state.with_last_applied(len(log)).with_commit_advance(len(self.nodes)+1)
             )
         elif isinstance(message, RequestVoteRequest):
             return self.on_request_vote(message, state, volatile_state)
