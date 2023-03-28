@@ -7,6 +7,7 @@ from dataclasses import dataclass,field
 from messages import *
 from typing import *
 from timesource import *
+from node import *
 
 @dataclass(frozen=True,init=True)
 class State:
@@ -158,8 +159,8 @@ class FSM:
             leaderId=self.id,
             prevLogIndex=prevIndex,
             prevLogTerm=self._log_term(state, prevIndex),
-            entries=state.log[volatile_state.commitIndex:lastIndex],
-            leaderCommit=volatile_state.commitIndex
+            entries=state.log[prevIndex:lastIndex],
+            leaderCommit=min(volatile_state.commitIndex,lastIndex)
         )
 
     def follower(self, now: datetime, last: datetime, message, state: State, volatile_state: VolatileState) -> Result:
@@ -244,10 +245,11 @@ class FSM:
         elif isinstance(message, CommandRequest):
             # client request
             log=state.log
-            log.append(LogEntry(term=state.currentTerm))
+            log.append(LogEntry(term=state.currentTerm,data=message.data))
             return Result(
                 next_state=State(currentTerm=state.currentTerm, votedFor=state.votedFor, log=log),
-                next_volatile_state=volatile_state.with_last_applied(len(log)).with_commit_advance(self.nservers,len(log))
+                next_volatile_state=volatile_state.with_commit_advance(self.nservers,len(log)),
+                message=CommandResponse()
             )
         elif isinstance(message, RequestVoteRequest):
             return self.on_request_vote(message, state, volatile_state)
@@ -263,14 +265,14 @@ class FSM:
             self.state_func = state_func
             self.process(Timeout(), None)
 
-    def process(self, message, sock=None):
+    def process(self, message, replyto=None):
         now = self.ts.now()
         if not isinstance(message,Timeout) and not isinstance(message,CommandRequest) and message.term > self.state.currentTerm:
             self.state=State(currentTerm=message.term, votedFor=0)
             self.state_func=self.follower
-        self.apply_result(now, self.state_func(now, self.last_time, message, self.state, self.volatile_state), sock)
+        self.apply_result(now, self.state_func(now, self.last_time, message, self.state, self.volatile_state), replyto)
 
-    def apply_result(self, now, result, sock=None):
+    def apply_result(self, now, result, replyto=None):
         if result:
             if result.update_last_time:
                 self.last_time = now
@@ -279,11 +281,16 @@ class FSM:
             if result.next_volatile_state:
                 self.volatile_state = result.next_volatile_state
             if result.message:
-                if result.message.dst == 0:
-                    for k,v in self.nodes.items():
-                        v.send(result.message)
+                # TODO: simplify
+                if isinstance(result.message,CommandResponse):
+                    if replyto:
+                        replyto.send(result.message)
                 else:
-                    self.nodes[result.message.dst].send(result.message)
+                    if result.message.dst == 0:
+                        for k,v in self.nodes.items():
+                            v.send(result.message)
+                    else:
+                        self.nodes[result.message.dst].send(result.message)
             if result.messages:
                 for m in result.messages:
                     self.nodes[m.dst].send(m)
@@ -294,15 +301,17 @@ class FSM:
     async def handle_request(self, reader, writer):
         # Handle per connection
         try:
+            sender = Sender(writer)
+            receiver = Receiver(reader)
             while True:
-                header = await reader.read(4)
-                size = struct.unpack('i', header)[0]
-                payload = await reader.read(size)
-                obj = pickle.loads(payload)
+                obj = await receiver.rcv()
                 print("Received: %s"%(obj))
-                self.process(obj, writer)
+                self.process(obj, sender)
+                await writer.drain()
         except Exception as ex:
+            import traceback
             print("Exception: %s"%(ex))
+            traceback.print_exception(ex)
 
     async def connector(self):
         while True:

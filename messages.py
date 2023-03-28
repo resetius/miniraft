@@ -7,6 +7,7 @@ from typing import *
 @dataclass(frozen=True)
 class LogEntry:
     term: int = 1
+    data: bytes = None
 
 @dataclass
 class RequestVoteRequest:
@@ -45,7 +46,11 @@ class AppendEntriesResponse:
 
 @dataclass
 class CommandRequest:
-    id: int
+    data: bytes
+
+@dataclass
+class CommandResponse:
+    pass
 
 class Timeout:
     Election = timedelta(seconds = 5)

@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from messages import *
 from node import *
 
@@ -10,12 +11,19 @@ async def main():
     i=0
     node = Node(servers[i][0], servers[i][1], servers[i][2])
     await node.connect()
-    node.send(
-        CommandRequest(0)
-    )
-    await node.drain()
+    print("Connected")
+
+    try:
+        for line in sys.stdin:
+            data=line.strip()
+            print("Send '%s'"%(data))
+            node.send(CommandRequest(data))
+            await node.drain()
+            await node.rcv()
+            print("Done")
+    except Exception as ex:
+        print("Exception: %s"%(ex))
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-
