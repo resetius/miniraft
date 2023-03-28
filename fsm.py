@@ -2,7 +2,8 @@ import pickle
 import struct
 import datetime
 import asyncio
-from dataclasses import dataclass
+from collections import defaultdict
+from dataclasses import dataclass,field
 from messages import *
 from typing import *
 from timesource import *
@@ -21,9 +22,24 @@ class State:
 class VolatileState:
     commitIndex: int = 0
     lastApplied: int = 0
-    nextIndex = {}
-    matchIndex = {}
+    nextIndex: Dict[int,int] = field(default_factory=lambda: defaultdict(int))
+    matchIndex: Dict[int,int] = field(default_factory=lambda: defaultdict(int))
     votes: int = 0
+
+    def with_set_vote(self, vote):
+        return VolatileState(commitIndex=self.commitIndex, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=vote)
+
+    def with_commit_index(self, index):
+       return VolatileState(commitIndex=index, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes)
+
+    def with_vote(self):
+        return VolatileState(commitIndex=self.commitIndex, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes+1)
+
+    def with_next_index(self, d):
+        return VolatileState(commitIndex=self.commitIndex, lastApplied=self.lastApplied, nextIndex=self.nextIndex|d, matchIndex=self.matchIndex, votes=self.votes)
+
+    def with_match_index(self, d):
+        return VolatileState(commitIndex=self.commitIndex, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex|d, votes=self.votes)
 
 @dataclass(frozen=True,init=True)
 class Result:
@@ -48,23 +64,38 @@ class FSM:
         for k,v in self.nodes.items():
             v.start(self.handle_request)
 
-    def on_append_entries(self, message: AppendEntriesRequest, state: State):
+    def on_append_entries(self, message: AppendEntriesRequest, state: State, volatile_state: VolatileState):
+
         if message.term < state.currentTerm:
             return Result(
-                message=AppendEntriesResponse(state.currentTerm, success=False),
+                message=AppendEntriesResponse(state.currentTerm, success=False, nodeId=self.id, matchIndex=0),
                 update_last_time=True
             )
-        # TODO: Reply false if log doesn’t contain an entry at prevLogIndex
-        # whose term matches prevLogTerm (§5.3)
-        # TODO: If an existing entry conflicts with a new one (same index
-        # but different terms), delete the existing entry and all that
-        # follow it (§5.3)
-        # TODO: Append any new entries not already in the log
-        # TODO: If leaderCommit > commitIndex, set commitIndex =
-        # min(leaderCommit, index of last new entry)
+
+        assert(message.term == state.currentTerm)
+
+        matchIndex=0
+        commitIndex=volatile_state.commitIndex
+        success=False
+        if (message.prevLogIndex==0 or (message.prevLogIndex <= len(state.log) and self._log_term(state, message.prevLogIndex)==message.prevLogTerm)):
+            # append
+            success=True
+            index=message.prevLogIndex
+            log=state.log
+            for entry in message.entries:
+                index=index+1
+                # replace or append log entries
+                if self._log_term(state, index) != entry.term:
+                    while len(log) > index-1:
+                        log.pop()
+                    log.append(entry)
+
+            matchIndex=index
+            commitIndex=max(commitIndex, message.leaderCommit)
+
         return Result(
-            next_state=State(currentTerm=message.term, votedFor=state.votedFor),
-            message=AppendEntriesResponse(message.term, success=True),
+            message=AppendEntriesResponse(message.term, success=success, nodeId=self.id, matchIndex=matchIndex),
+            next_volatile_state=volatile_state.with_commit_index(commitIndex),
             next_state_func=self.follower,
             update_last_time=True
         )
@@ -90,8 +121,12 @@ class FSM:
                 recepient=message.candidateId,
             )
 
-    def _log_term(self, state):
-        return 0 if len(state.log)==0 else state.log[-1].term
+    def _log_term(self, state: State, index: int = -1):
+        if index < 0: index = len(state.log)
+        if index < 1 or index > len(state.log):
+            return 0
+        else:
+            return state.log[index-1].term
 
     def _create_vote(self, state):
         return RequestVoteRequest(
@@ -111,7 +146,7 @@ class FSM:
         elif isinstance(message, RequestVoteRequest):
             return self.on_request_vote(message, state, volatile_state)
         elif isinstance(message, AppendEntriesRequest):
-            return self.on_append_entries(message, state)
+            return self.on_append_entries(message, state, volatile_state)
 
         return None
 
@@ -120,7 +155,7 @@ class FSM:
             if (now - last > Timeout.Election):
                 return Result(
                     next_state=State(currentTerm=state.currentTerm+1,votedFor=self.id),
-                    next_volatile_state=VolatileState(votes=1),
+                    next_volatile_state=volatile_state.with_set_vote(1),
                     update_last_time=True,
                     message=self._create_vote(state),
                     recepient=-1
@@ -139,20 +174,20 @@ class FSM:
                 votes = votes+1
             print("Need/total %d/%d"%(self.min_votes,votes))
             if votes >= self.min_votes:
+                value = len(state.log)+1
+                next_indices = {key: value for key in range(1,len(self.nodes)+2)}
                 return Result(
                     next_state=State(currentTerm=state.currentTerm,votedFor=state.votedFor),
-                    next_volatile_state=VolatileState(votes=votes),
+                    next_volatile_state=volatile_state.with_set_vote(votes).with_next_index(next_indices),
                     next_state_func=self.leader,
                     update_last_time=True
                 )
             return Result(
                 next_state=State(currentTerm=state.currentTerm,votedFor=state.votedFor),
-                next_volatile_state=VolatileState(votes=votes),
+                next_volatile_state=volatile_state.with_set_vote(votes),
             )
         elif isinstance(message, AppendEntriesRequest):
-            return self.on_append_entries(message, state)
-        else:
-            pass
+            return self.on_append_entries(message, state, volatile_state)
 
         return None
 
@@ -167,12 +202,21 @@ class FSM:
                         leaderId=self.id,
                         prevLogIndex=0,
                         prevLogTerm=0,
-                        leaderCommit=0
+                        leaderCommit=volatile_state.commitIndex
                     )
                 )
         elif isinstance(message, AppendEntriesResponse):
-            # TODO: Response from follower
-            pass
+            if message.term == state.currentTerm:
+                nodeId=message.nodeId
+                if message.success:
+                    matchIndex = max(volatile_state.matchIndex[nodeId], message.matchIndex)
+                    return Result(
+                        next_volatile_state=volatile_state.with_match_index({nodeId: matchIndex}).with_next_index({nodeId: message.matchIndex+1})
+                    )
+                else:
+                    return Result(
+                        next_volatile_state=volatile_state.with_next_index({nodeId: max(1, volatile_state.nextIndex[nodeId]-1)})
+                    )
         elif isinstance(message, AppendEntriesRequest):
             # Bad request
             pass

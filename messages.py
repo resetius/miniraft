@@ -27,7 +27,9 @@ class AppendEntriesRequest:
 @dataclass
 class AppendEntriesResponse:
     term: int
+    nodeId: int
     success: bool
+    matchIndex: int # missing field in raft.pdf
 
 class Timeout:
     Election = timedelta(seconds = 5)
