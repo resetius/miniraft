@@ -152,5 +152,18 @@ class Test(unittest.TestCase):
         fsm.process(RequestVoteResponse(src=2,dst=1,term=2, voteGranted=True))
         self.assertEqual(fsm.state_func, fsm.leader)
 
+    def test_commit_advance(self):
+        s = VolatileState(matchIndex={1:1})
+        s1 = s.with_commit_advance(3,1)
+        self.assertEqual(s1.commitIndex, 1)
+        s1 = s.with_commit_advance(5,1)
+        self.assertEqual(s1.commitIndex, 0)
+
+        s = VolatileState(matchIndex={1:1,2:2})
+        s1 = s.with_commit_advance(3,2)
+        self.assertEqual(s1.commitIndex, 2)
+        s1 = s.with_commit_advance(5,2)
+        self.assertEqual(s1.commitIndex, 1)
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,12 +1,20 @@
 import asyncio
 import messages
+from dataclasses import dataclass
+
+@dataclass
+class Config:
+    id: int
+    host: str
+    replication_port: int
+    port: int
 
 class Node:
     def __init__(self, id, host, port):
         self.id = id
         self.connected = False
         self.host = host
-        self.port = port        
+        self.port = port
         self.connect_task = None
         self.io_task = None
         self.writer = None

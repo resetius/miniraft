@@ -28,13 +28,13 @@ class VolatileState:
     def with_last_applied(self, index):
         return VolatileState(commitIndex=self.commitIndex, lastApplied=index, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes)
 
-    def with_commit_advance(self, servers):
+    def with_commit_advance(self, nservers, lastIndex):
         indices = list(self.matchIndex.values())
-        indices.append(self.lastApplied)
-        while len(indices)<servers:
+        indices.append(lastIndex)
+        while len(indices)<nservers:
             indices.append(0)
         indices.sort()
-        commitIndex=max(self.commitIndex, indices[servers//2])
+        commitIndex=max(self.commitIndex, indices[nservers//2])
         return VolatileState(commitIndex=commitIndex, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes)
 
     def with_commit_index(self, index):
@@ -64,6 +64,10 @@ class FSM:
         self.nodes = nodes
         self.ts = ts
         self.min_votes = (len(nodes)+2)//2
+        self.npeers = len(nodes)
+        self.nservers = len(nodes)+1
+        assert(self.npeers % 2 == 0)
+        assert(self.nservers % 2 == 1)
         self.state = State()
         self.volatile_state = VolatileState()
         self.state_func = self.follower
@@ -228,7 +232,7 @@ class FSM:
                 if message.success:
                     matchIndex = max(volatile_state.matchIndex[nodeId], message.matchIndex)
                     return Result(
-                        next_volatile_state=volatile_state.with_match_index({nodeId: matchIndex}).with_next_index({nodeId: message.matchIndex+1}).with_commit_advance(len(self.nodes)+1)
+                        next_volatile_state=volatile_state.with_match_index({nodeId: matchIndex}).with_next_index({nodeId: message.matchIndex+1}).with_commit_advance(self.nservers,len(state.log))
                     )
                 else:
                     return Result(
@@ -240,7 +244,7 @@ class FSM:
             log.append(LogEntry(term=state.currentTerm))
             return Result(
                 next_state=State(currentTerm=state.currentTerm, votedFor=state.votedFor, log=log),
-                next_volatile_state=volatile_state.with_last_applied(len(log)).with_commit_advance(len(self.nodes)+1)
+                next_volatile_state=volatile_state.with_last_applied(len(log)).with_commit_advance(self.nservers,len(log))
             )
         elif isinstance(message, RequestVoteRequest):
             return self.on_request_vote(message, state, volatile_state)
@@ -313,4 +317,3 @@ class FSM:
                 print("State: %s %s"%(self.state,self.volatile_state))
                 t0=t1
             await asyncio.sleep(0.01)
-
