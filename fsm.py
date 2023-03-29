@@ -268,7 +268,7 @@ class FSM:
     def process(self, message, replyto=None):
         now = self.ts.now()
         if not isinstance(message,Timeout) and not isinstance(message,CommandRequest) and message.term > self.state.currentTerm:
-            self.state=State(currentTerm=message.term, votedFor=0)
+            self.state=State(currentTerm=message.term, votedFor=0, log=self.state.log)
             self.state_func=self.follower
         self.apply_result(now, self.state_func(now, self.last_time, message, self.state, self.volatile_state), replyto)
 

@@ -102,6 +102,97 @@ class Test(unittest.TestCase):
         self.assertEqual(messages[0].dst, 2)
         self.assertEqual(messages[0].success, False)
 
+    def _mklog(self, terms):
+        entries=[]
+        for i in terms:
+            entries.append(LogEntry(i, ""))
+        return entries
+
+    def test_follower_append_entries_7a(self):
+        # leader: 1,1,1,4,4,5,5,6,6,6
+        messages=[]
+        on_send = lambda y: messages.append(y)
+
+        fsm=self._fsm(on_send)
+        fsm.state=State(currentTerm=1,votedFor=2,log=self._mklog([1,1,1,4,4,5,5,6,6]))
+        fsm.process(AppendEntriesRequest(
+            src=2,
+            dst=1,
+            term=1,
+            leaderId=2,
+            prevLogIndex=9,
+            prevLogTerm=6,
+            leaderCommit=9,
+            entries=self._mklog([6])
+        ))
+        self.assertEqual(messages[-1].success, True)
+        self.assertEqual(messages[-1].matchIndex, 10)
+        self.assertEqual(len(fsm.state.log),10)
+
+    def test_follower_append_entries_7b(self):
+        # leader: 1,1,1,4,4,5,5,6,6,6
+        messages=[]
+        on_send = lambda y: messages.append(y)
+
+        fsm=self._fsm(on_send)
+        fsm.state=State(currentTerm=1,votedFor=2,log=self._mklog([1,1,1,4]))
+        fsm.process(AppendEntriesRequest(
+            src=2,
+            dst=1,
+            term=1,
+            leaderId=2,
+            prevLogIndex=4,
+            prevLogTerm=4,
+            leaderCommit=9,
+            entries=self._mklog([4,5,5,6,6,6])
+        ))
+        self.assertEqual(messages[-1].success, True)
+        self.assertEqual(messages[-1].matchIndex, 10)
+        self.assertEqual(len(fsm.state.log),10)
+
+    def test_follower_append_entries_7b(self):
+        # leader: 1,1,1,4,4,5,5,6,6,6
+        messages=[]
+        on_send = lambda y: messages.append(y)
+
+        fsm=self._fsm(on_send)
+        fsm.state=State(currentTerm=1,votedFor=2,log=self._mklog([1,1,1,4,4,5,5,6,6,6,6]))
+        fsm.process(AppendEntriesRequest(
+            src=2,
+            dst=1,
+            term=1,
+            leaderId=2,
+            prevLogIndex=9,
+            prevLogTerm=6,
+            leaderCommit=9,
+            entries=self._mklog([6])
+        ))
+        self.assertEqual(messages[-1].success, True)
+        self.assertEqual(messages[-1].matchIndex, 10)
+        self.assertEqual(len(fsm.state.log),11)
+
+    def test_follower_append_entries_7f(self):
+        # leader: 1,1,1,4,4,5,5,6,6,6
+        messages=[]
+        on_send = lambda y: messages.append(y)
+
+        fsm=self._fsm(on_send)
+        fsm.state=State(currentTerm=1,votedFor=2,log=self._mklog([1,1,1,2,2,2,3,3,3,3,3]))
+        fsm.process(AppendEntriesRequest(
+            src=2,
+            dst=1,
+            term=8,
+            leaderId=2,
+            prevLogIndex=3,
+            prevLogTerm=1,
+            leaderCommit=9,
+            entries=self._mklog([4,4,5,5,6,6,6])
+        ))
+        self.assertEqual(messages[-1].success, True)
+        self.assertEqual(messages[-1].matchIndex, 10)
+        self.assertEqual(len(fsm.state.log),10)
+        self.assertEqual(fsm.state.log,self._mklog([1,1,1,4,4,5,5,6,6,6]))
+
     def test_follower_append_entries_empty_to_empty_log(self):
         messages=[]
         on_send = lambda y: messages.append(y)
