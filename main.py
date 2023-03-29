@@ -1,7 +1,7 @@
 import asyncio
 import sys
 from node import *
-from fsm import *
+from raft import *
 
 async def main():
     nodes = {}
@@ -13,11 +13,11 @@ async def main():
         else:
             nodes[id] = Node(id, host, port)
 
-    fsm = FSM(myid, nodes)
+    raft = Raft(myid, nodes)
 
-    asyncio.create_task(fsm.connector())
-    asyncio.create_task(fsm.idle())
-    server = await asyncio.start_server(fsm.handle_request, myhost, myport)
+    asyncio.create_task(raft.connector())
+    asyncio.create_task(raft.idle())
+    server = await asyncio.start_server(raft.handle_request, myhost, myport)
     await server.serve_forever()
 
 if __name__ == "__main__":

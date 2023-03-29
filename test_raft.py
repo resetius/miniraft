@@ -1,6 +1,6 @@
 import unittest
 import datetime
-from fsm import *
+from raft import *
 from timesource import *
 
 class FakeNode:
@@ -19,78 +19,78 @@ class FakeNode:
         return self.on_send(message)
 
 class Test(unittest.TestCase):
-    def _fsm(self, on_send=None, count=3):
+    def _raft(self, on_send=None, count=3):
         ts = FakeTimeSource(datetime.now())
         nodes = {}
         for i in range(2,count+1):
             nodes[i] = FakeNode(on_send)
-        fsm = FSM(1, nodes, ts)
-        return fsm
+        raft = Raft(1, nodes, ts)
+        return raft
 
     def test_initial(self):
-        fsm = self._fsm()
-        self.assertEqual(fsm.state_func, fsm.follower)
+        raft = self._raft()
+        self.assertEqual(raft.state_func, raft.follower)
 
     def test_become(self):
-        fsm = self._fsm()
-        self.assertEqual(fsm.state_func, fsm.follower)
-        fsm.become(fsm.candidate)
-        self.assertEqual(fsm.state_func, fsm.candidate)
+        raft = self._raft()
+        self.assertEqual(raft.state_func, raft.follower)
+        raft.become(raft.candidate)
+        self.assertEqual(raft.state_func, raft.candidate)
 
     def test_become_same_func(self):
-        fsm = self._fsm()
-        self.assertEqual(fsm.state_func, fsm.follower)
-        ts = fsm.ts
+        raft = self._raft()
+        self.assertEqual(raft.state_func, raft.follower)
+        ts = raft.ts
         ts.advance(timedelta(seconds=10))
-        fsm.become(fsm.follower)
-        self.assertEqual(fsm.state_func, fsm.follower)
+        raft.become(raft.follower)
+        self.assertEqual(raft.state_func, raft.follower)
 
     def test_apply_empty_result(self):
-        fsm = self._fsm()
-        state = fsm.state
-        volatile_state = fsm.volatile_state
-        self.assertEqual(fsm.state_func, fsm.follower)
-        fsm.apply_result(datetime.now(), None)
-        self.assertEqual(fsm.state_func, fsm.follower)
-        self.assertEqual(fsm.state, state)
-        self.assertEqual(fsm.volatile_state, volatile_state)
+        raft = self._raft()
+        state = raft.state
+        volatile_state = raft.volatile_state
+        self.assertEqual(raft.state_func, raft.follower)
+        raft.apply_result(datetime.now(), None)
+        self.assertEqual(raft.state_func, raft.follower)
+        self.assertEqual(raft.state, state)
+        self.assertEqual(raft.volatile_state, volatile_state)
 
     def test_apply_state_func_change_result(self):
-        fsm = self._fsm()
-        state = fsm.state
-        volatile_state = fsm.volatile_state
-        self.assertEqual(fsm.state_func, fsm.follower)
-        fsm.apply_result(datetime.now(), Result(
-            next_state_func=fsm.candidate
+        raft = self._raft()
+        state = raft.state
+        volatile_state = raft.volatile_state
+        self.assertEqual(raft.state_func, raft.follower)
+        raft.apply_result(datetime.now(), Result(
+            next_state_func=raft.candidate
         ))
-        self.assertEqual(fsm.state_func, fsm.candidate)
-        self.assertEqual(fsm.state, state)
-        self.assertEqual(fsm.volatile_state, volatile_state)
+        self.assertEqual(raft.state_func, raft.candidate)
+        self.assertEqual(raft.state, state)
+        self.assertEqual(raft.volatile_state, volatile_state)
 
     def test_apply_time_change_result(self):
-        fsm = self._fsm()
+        raft = self._raft()
         n = datetime.now()
-        fsm.apply_result(n, Result(
+        raft.apply_result(n, Result(
             update_last_time=True
         ))
-        self.assertEqual(fsm.last_time, n)
+        self.assertEqual(raft.last_time, n)
 
     def test_follower_to_candidate_on_timeout(self):
-        fsm = self._fsm()
-        ts = fsm.ts
-        self.assertEqual(fsm.state_func, fsm.follower)
-        fsm.process(Timeout())
-        self.assertEqual(fsm.state_func, fsm.follower)
+        raft = self._raft()
+        ts = raft.ts
+        self.assertEqual(raft.state_func, raft.follower)
+        raft.process(Timeout())
+        self.assertEqual(raft.state_func, raft.follower)
         ts.advance(timedelta(seconds=10))
-        fsm.process(Timeout())
-        self.assertEqual(fsm.state_func, fsm.candidate)
+        raft.process(Timeout())
+        self.assertEqual(raft.state_func, raft.candidate)
 
     def test_follower_append_entries_small_term(self):
         messages=[]
         on_send = lambda y: messages.append(y)
 
-        fsm = self._fsm(on_send)
-        fsm.process(AppendEntriesRequest(
+        raft = self._raft(on_send)
+        raft.process(AppendEntriesRequest(
             src=2,
             dst=1,
             term=0,
@@ -113,9 +113,9 @@ class Test(unittest.TestCase):
         messages=[]
         on_send = lambda y: messages.append(y)
 
-        fsm=self._fsm(on_send)
-        fsm.state=State(currentTerm=1,votedFor=2,log=self._mklog([1,1,1,4,4,5,5,6,6]))
-        fsm.process(AppendEntriesRequest(
+        raft=self._raft(on_send)
+        raft.state=State(currentTerm=1,votedFor=2,log=self._mklog([1,1,1,4,4,5,5,6,6]))
+        raft.process(AppendEntriesRequest(
             src=2,
             dst=1,
             term=1,
@@ -127,16 +127,16 @@ class Test(unittest.TestCase):
         ))
         self.assertEqual(messages[-1].success, True)
         self.assertEqual(messages[-1].matchIndex, 10)
-        self.assertEqual(len(fsm.state.log),10)
+        self.assertEqual(len(raft.state.log),10)
 
     def test_follower_append_entries_7b(self):
         # leader: 1,1,1,4,4,5,5,6,6,6
         messages=[]
         on_send = lambda y: messages.append(y)
 
-        fsm=self._fsm(on_send)
-        fsm.state=State(currentTerm=1,votedFor=2,log=self._mklog([1,1,1,4]))
-        fsm.process(AppendEntriesRequest(
+        raft=self._raft(on_send)
+        raft.state=State(currentTerm=1,votedFor=2,log=self._mklog([1,1,1,4]))
+        raft.process(AppendEntriesRequest(
             src=2,
             dst=1,
             term=1,
@@ -148,16 +148,16 @@ class Test(unittest.TestCase):
         ))
         self.assertEqual(messages[-1].success, True)
         self.assertEqual(messages[-1].matchIndex, 10)
-        self.assertEqual(len(fsm.state.log),10)
+        self.assertEqual(len(raft.state.log),10)
 
     def test_follower_append_entries_7c(self):
         # leader: 1,1,1,4,4,5,5,6,6,6
         messages=[]
         on_send = lambda y: messages.append(y)
 
-        fsm=self._fsm(on_send)
-        fsm.state=State(currentTerm=1,votedFor=2,log=self._mklog([1,1,1,4,4,5,5,6,6,6,6]))
-        fsm.process(AppendEntriesRequest(
+        raft=self._raft(on_send)
+        raft.state=State(currentTerm=1,votedFor=2,log=self._mklog([1,1,1,4,4,5,5,6,6,6,6]))
+        raft.process(AppendEntriesRequest(
             src=2,
             dst=1,
             term=1,
@@ -169,16 +169,16 @@ class Test(unittest.TestCase):
         ))
         self.assertEqual(messages[-1].success, True)
         self.assertEqual(messages[-1].matchIndex, 10)
-        self.assertEqual(len(fsm.state.log),11)
+        self.assertEqual(len(raft.state.log),11)
 
     def test_follower_append_entries_7f(self):
         # leader: 1,1,1,4,4,5,5,6,6,6
         messages=[]
         on_send = lambda y: messages.append(y)
 
-        fsm=self._fsm(on_send)
-        fsm.state=State(currentTerm=1,votedFor=2,log=self._mklog([1,1,1,2,2,2,3,3,3,3,3]))
-        fsm.process(AppendEntriesRequest(
+        raft=self._raft(on_send)
+        raft.state=State(currentTerm=1,votedFor=2,log=self._mklog([1,1,1,2,2,2,3,3,3,3,3]))
+        raft.process(AppendEntriesRequest(
             src=2,
             dst=1,
             term=8,
@@ -190,15 +190,15 @@ class Test(unittest.TestCase):
         ))
         self.assertEqual(messages[-1].success, True)
         self.assertEqual(messages[-1].matchIndex, 10)
-        self.assertEqual(len(fsm.state.log),10)
-        self.assertEqual(fsm.state.log,self._mklog([1,1,1,4,4,5,5,6,6,6]))
+        self.assertEqual(len(raft.state.log),10)
+        self.assertEqual(raft.state.log,self._mklog([1,1,1,4,4,5,5,6,6,6]))
 
     def test_follower_append_entries_empty_to_empty_log(self):
         messages=[]
         on_send = lambda y: messages.append(y)
 
-        fsm = self._fsm(on_send)
-        fsm.process(AppendEntriesRequest(
+        raft = self._raft(on_send)
+        raft.process(AppendEntriesRequest(
             src=2,
             dst=1,
             term=1,
@@ -215,65 +215,65 @@ class Test(unittest.TestCase):
         messages=[]
         on_send = lambda y: messages.append(y)
 
-        fsm = self._fsm(on_send)
-        fsm.ts.advance(timedelta(seconds=10))
-        term = fsm.state.currentTerm
-        fsm.become(fsm.candidate)
-        self.assertEqual(term+1, fsm.state.currentTerm) # update term
-        self.assertEqual(fsm.ts.now(), fsm.last_time) # update last time
+        raft = self._raft(on_send)
+        raft.ts.advance(timedelta(seconds=10))
+        term = raft.state.currentTerm
+        raft.become(raft.candidate)
+        self.assertEqual(term+1, raft.state.currentTerm) # update term
+        self.assertEqual(raft.ts.now(), raft.last_time) # update last time
         self.assertEqual(len(messages), 2)
-        self.assertEqual(messages[0], RequestVoteRequest(1,0,term+1, fsm.id, 0, 0))
-        self.assertEqual(messages[1], RequestVoteRequest(1,0,term+1, fsm.id, 0, 0))
+        self.assertEqual(messages[0], RequestVoteRequest(1,0,term+1, raft.id, 0, 0))
+        self.assertEqual(messages[1], RequestVoteRequest(1,0,term+1, raft.id, 0, 0))
 
     def test_candidate_vote_request_small_term(self):
-        fsm = self._fsm()
-        ts=fsm.ts
-        result = fsm.candidate(ts.now(),ts.now(),RequestVoteRequest(2, 1, 0, 2, 1, 1), fsm.state, fsm.volatile_state)
-        self.assertEqual(result.message, RequestVoteResponse(1,2,fsm.state.currentTerm, False))
+        raft = self._raft()
+        ts=raft.ts
+        result = raft.candidate(ts.now(),ts.now(),RequestVoteRequest(2, 1, 0, 2, 1, 1), raft.state, raft.volatile_state)
+        self.assertEqual(result.message, RequestVoteResponse(1,2,raft.state.currentTerm, False))
 
     def test_candidate_vote_request_ok_term(self):
-        fsm = self._fsm()
-        ts=fsm.ts
-        result = fsm.candidate(ts.now(),ts.now(),RequestVoteRequest(2, 1, 1, 2, 1, 1), fsm.state, fsm.volatile_state)
-        self.assertEqual(result.message, RequestVoteResponse(1, 2, fsm.state.currentTerm, True))
-        self.assertEqual(fsm.state.currentTerm, 1)
+        raft = self._raft()
+        ts=raft.ts
+        result = raft.candidate(ts.now(),ts.now(),RequestVoteRequest(2, 1, 1, 2, 1, 1), raft.state, raft.volatile_state)
+        self.assertEqual(result.message, RequestVoteResponse(1, 2, raft.state.currentTerm, True))
+        self.assertEqual(raft.state.currentTerm, 1)
 
     def test_candidate_vote_request_big(self):
-        fsm = self._fsm()
-        ts=fsm.ts
-        fsm.become(fsm.candidate)
-        result = fsm.process(RequestVoteRequest(2, 1, 3, 2, 1, 1))
-        self.assertEqual(fsm.state_func, fsm.follower)
+        raft = self._raft()
+        ts=raft.ts
+        raft.become(raft.candidate)
+        result = raft.process(RequestVoteRequest(2, 1, 3, 2, 1, 1))
+        self.assertEqual(raft.state_func, raft.follower)
 
     def test_candidate_vote_after_start(self):
         messages = []
         on_send = lambda y: messages.append(y)
-        fsm = self._fsm(on_send)
-        self.assertEqual(fsm.state_func, fsm.follower)
-        fsm.ts.advance(timedelta(seconds=10))
-        fsm.become(fsm.candidate) # initiates election
-        self.assertEqual(fsm.state.votedFor, 1)
-        self.assertEqual(fsm.state.currentTerm, 2)
-        fsm.process(RequestVoteRequest(2,1,2, 2, 1, 1))
+        raft = self._raft(on_send)
+        self.assertEqual(raft.state_func, raft.follower)
+        raft.ts.advance(timedelta(seconds=10))
+        raft.become(raft.candidate) # initiates election
+        self.assertEqual(raft.state.votedFor, 1)
+        self.assertEqual(raft.state.currentTerm, 2)
+        raft.process(RequestVoteRequest(2,1,2, 2, 1, 1))
         self.assertEqual(messages[-1].voteGranted, False)
 
         # request with higher term => follower
-        fsm.process(RequestVoteRequest(2,1,3, 3, 1, 1))
-        self.assertEqual(fsm.state.votedFor, 3)
+        raft.process(RequestVoteRequest(2,1,3, 3, 1, 1))
+        self.assertEqual(raft.state.votedFor, 3)
         self.assertEqual(messages[-1].voteGranted, True)
 
     def test_election_5_nodes(self):
-        fsm = self._fsm(None, 5)
-        fsm.ts.advance(timedelta(seconds=10))
-        fsm.become(fsm.candidate)
-        fsm.process(RequestVoteResponse(src=2,dst=1,term=2, voteGranted=True))
+        raft = self._raft(None, 5)
+        raft.ts.advance(timedelta(seconds=10))
+        raft.become(raft.candidate)
+        raft.process(RequestVoteResponse(src=2,dst=1,term=2, voteGranted=True))
 
-        self.assertEqual(fsm.state_func, fsm.candidate)
-        fsm.process(RequestVoteResponse(src=2,dst=1,term=2, voteGranted=True))
-        self.assertEqual(fsm.state_func, fsm.candidate)
+        self.assertEqual(raft.state_func, raft.candidate)
+        raft.process(RequestVoteResponse(src=2,dst=1,term=2, voteGranted=True))
+        self.assertEqual(raft.state_func, raft.candidate)
 
-        fsm.process(RequestVoteResponse(src=3,dst=1,term=2, voteGranted=True))
-        self.assertEqual(fsm.state_func, fsm.leader)
+        raft.process(RequestVoteResponse(src=3,dst=1,term=2, voteGranted=True))
+        self.assertEqual(raft.state_func, raft.leader)
 
     def test_commit_advance(self):
         state=State(currentTerm=1,log=self._mklog([1,1,1,1]))

@@ -66,7 +66,7 @@ class Result:
     message: Any = None
     messages: Any = None
 
-class FSM:
+class Raft:
     def __init__(self, id: int, nodes, ts: TimeSource = TimeSource()):
         self.id = id
         self.nodes = nodes
