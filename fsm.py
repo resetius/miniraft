@@ -78,7 +78,7 @@ class FSM:
 
         if message.term < state.currentTerm:
             return Result(
-                message=AppendEntriesResponse(src=self.id, dst=message.src, term=state.currentTerm, success=False, nodeId=self.id, matchIndex=0),
+                message=AppendEntriesResponse(src=self.id, dst=message.src, term=state.currentTerm, success=False, matchIndex=0),
                 update_last_time=True
             )
 

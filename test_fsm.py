@@ -85,9 +85,28 @@ class Test(unittest.TestCase):
         fsm.process(Timeout())
         self.assertEqual(fsm.state_func, fsm.candidate)
 
-    def test_follower_append_entries(self):
-        # TODO: implement
-        fsm = self._fsm()
+    def test_follower_append_entries_small_term(self):
+        messages=[]
+        on_send = lambda y: messages.append(y)
+
+        fsm = self._fsm(on_send)
+        fsm.process(AppendEntriesRequest(
+            src=2,
+            dst=1,
+            term=0,
+            leaderId=2,
+            prevLogIndex=0,
+            prevLogTerm=0,
+            leaderCommit=0
+        ))
+        self.assertEqual(messages[0].dst, 2)
+        self.assertEqual(messages[0].success, False)
+
+    def test_follower_append_entries_empty_to_empty_log(self):
+        messages=[]
+        on_send = lambda y: messages.append(y)
+
+        fsm = self._fsm(on_send)
         fsm.process(AppendEntriesRequest(
             src=2,
             dst=1,
@@ -97,6 +116,9 @@ class Test(unittest.TestCase):
             prevLogTerm=0,
             leaderCommit=0
         ))
+        self.assertEqual(messages[0].dst, 2)
+        self.assertEqual(messages[0].success, True)
+        self.assertEqual(messages[0].matchIndex, 0)
 
     def test_candidate_initiate_election(self):
         messages=[]
@@ -124,6 +146,13 @@ class Test(unittest.TestCase):
         result = fsm.candidate(ts.now(),ts.now(),RequestVoteRequest(2, 1, 1, 2, 1, 1), fsm.state, fsm.volatile_state)
         self.assertEqual(result.message, RequestVoteResponse(1, 2, fsm.state.currentTerm, True))
         self.assertEqual(fsm.state.currentTerm, 1)
+
+    def test_candidate_vote_request_big(self):
+        fsm = self._fsm()
+        ts=fsm.ts
+        fsm.become(fsm.candidate)
+        result = fsm.process(RequestVoteRequest(2, 1, 3, 2, 1, 1))
+        self.assertEqual(fsm.state_func, fsm.follower)
 
     def test_candidate_vote_after_start(self):
         messages = []
