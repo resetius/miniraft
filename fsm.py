@@ -15,6 +15,13 @@ class State:
     votedFor: int = 0
     log: List[LogEntry] = field(default_factory=list)
 
+    def log_term(self, index: int = -1):
+        if index < 0: index = len(self.log)
+        if index < 1 or index > len(self.log):
+            return 0
+        else:
+            return self.log[index-1].term
+
 @dataclass(frozen=True,init=True)
 class VolatileState:
     commitIndex: int = 0
@@ -29,14 +36,17 @@ class VolatileState:
     def with_last_applied(self, index):
         return VolatileState(commitIndex=self.commitIndex, lastApplied=index, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes)
 
-    def with_commit_advance(self, nservers, lastIndex):
+    def with_commit_advance(self, nservers: int, lastIndex: int, state: State):
         indices = list(self.matchIndex.values())
         indices.append(lastIndex)
         while len(indices)<nservers:
             indices.append(0)
         indices.sort()
         commitIndex=max(self.commitIndex, indices[nservers//2])
-        return VolatileState(commitIndex=commitIndex, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes)
+        if state.log_term(commitIndex)==state.currentTerm:
+            return VolatileState(commitIndex=commitIndex, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes)
+        else:
+            return self
 
     def with_commit_index(self, index):
         return VolatileState(commitIndex=index, lastApplied=self.lastApplied, nextIndex=self.nextIndex, matchIndex=self.matchIndex, votes=self.votes)
@@ -87,7 +97,7 @@ class FSM:
         matchIndex=0
         commitIndex=volatile_state.commitIndex
         success=False
-        if (message.prevLogIndex==0 or (message.prevLogIndex <= len(state.log) and self._log_term(state, message.prevLogIndex)==message.prevLogTerm)):
+        if (message.prevLogIndex==0 or (message.prevLogIndex <= len(state.log) and state.log_term(message.prevLogIndex)==message.prevLogTerm)):
             # append
             success=True
             index=message.prevLogIndex
@@ -95,7 +105,7 @@ class FSM:
             for entry in message.entries:
                 index=index+1
                 # replace or append log entries
-                if self._log_term(state, index) != entry.term:
+                if state.log_term(index) != entry.term:
                     while len(log) > index-1:
                         log.pop()
                     log.append(entry)
@@ -119,22 +129,15 @@ class FSM:
             accept=False
             if state.votedFor == 0:
                 accept=True
-            elif state.votedFor == message.candidateId and message.lastLogTerm > self._log_term(state):
+            elif state.votedFor == message.candidateId and message.lastLogTerm > state.log_term():
                 accept=True
-            elif state.votedFor == message.candidateId and message.lastLogTerm == self._log_term(state) and message.lastLogIndex >= len(state.log):
+            elif state.votedFor == message.candidateId and message.lastLogTerm == state.log_term() and message.lastLogIndex >= len(state.log):
                 accept=True
 
             return Result(
                 next_state=State(currentTerm=message.term, votedFor=message.candidateId),
                 message=RequestVoteResponse(src=self.id, dst=message.src, term=message.term, voteGranted=accept)
             )
-
-    def _log_term(self, state: State, index: int = -1):
-        if index < 0: index = len(state.log)
-        if index < 1 or index > len(state.log):
-            return 0
-        else:
-            return state.log[index-1].term
 
     def _create_vote(self, state):
         return RequestVoteRequest(
@@ -158,7 +161,7 @@ class FSM:
             term=state.currentTerm,
             leaderId=self.id,
             prevLogIndex=prevIndex,
-            prevLogTerm=self._log_term(state, prevIndex),
+            prevLogTerm=state.log_term(prevIndex),
             entries=state.log[prevIndex:lastIndex],
             leaderCommit=min(volatile_state.commitIndex,lastIndex)
         )

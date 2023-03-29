@@ -276,17 +276,24 @@ class Test(unittest.TestCase):
         self.assertEqual(fsm.state_func, fsm.leader)
 
     def test_commit_advance(self):
+        state=State(currentTerm=1,log=self._mklog([1,1,1,1]))
         s = VolatileState(matchIndex={1:1})
-        s1 = s.with_commit_advance(3,1)
+        s1 = s.with_commit_advance(3,1,state)
         self.assertEqual(s1.commitIndex, 1)
-        s1 = s.with_commit_advance(5,1)
+        s1 = s.with_commit_advance(5,1,state)
         self.assertEqual(s1.commitIndex, 0)
 
         s = VolatileState(matchIndex={1:1,2:2})
-        s1 = s.with_commit_advance(3,2)
+        s1 = s.with_commit_advance(3,2,state)
         self.assertEqual(s1.commitIndex, 2)
-        s1 = s.with_commit_advance(5,2)
+        s1 = s.with_commit_advance(5,2,state)
         self.assertEqual(s1.commitIndex, 1)
+
+    def test_commit_advance_wrong_term(self):
+        state=State(currentTerm=2,log=self._mklog([1,1,1,1]))
+        s = VolatileState(matchIndex={1:1,2:2})
+        s1 = s.with_commit_advance(3,2,state)
+        self.assertEqual(s1.commitIndex, 0)
 
 if __name__ == "__main__":
     unittest.main()
