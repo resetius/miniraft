@@ -2,6 +2,7 @@ import asyncio
 import sys
 from node import *
 from raft import *
+from net import *
 
 async def main():
     nodes = {}
@@ -14,10 +15,11 @@ async def main():
             nodes[id] = Node(id, host, port)
 
     raft = Raft(myid, nodes)
+    net = Net(nodes, raft)
 
-    asyncio.create_task(raft.connector())
-    asyncio.create_task(raft.idle())
-    server = await asyncio.start_server(raft.handle_request, myhost, myport)
+    asyncio.create_task(net.connector())
+    asyncio.create_task(net.idle())
+    server = await asyncio.start_server(net.handle_request, myhost, myport)
     await server.serve_forever()
 
 if __name__ == "__main__":

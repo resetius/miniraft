@@ -81,9 +81,6 @@ class Raft:
         self.state_func = self.follower
         self.last_time = self.ts.now()
 
-        for k,v in self.nodes.items():
-            v.start(self.handle_request)
-
     def on_append_entries(self, message: AppendEntriesRequest, state: State, volatile_state: VolatileState):
 
         if message.term < state.currentTerm:
@@ -300,35 +297,3 @@ class Raft:
 
             if result.next_state_func:
                 self.become(result.next_state_func)
-
-    async def handle_request(self, reader, writer):
-        # Handle per connection
-        try:
-            sender = Sender(writer)
-            receiver = Receiver(reader)
-            while True:
-                obj = await receiver.rcv()
-                print("Received: %s"%(obj))
-                self.process(obj, sender)
-                await writer.drain()
-        except Exception as ex:
-            import traceback
-            print("Exception: %s"%(ex))
-            traceback.print_exception(ex)
-
-    async def connector(self):
-        while True:
-            for k,v in self.nodes.items():
-                await v.drain()
-            await asyncio.sleep(0.1)
-
-    async def idle(self):
-        t0=datetime.now()
-        dt=timedelta(seconds=2)
-        while True:
-            self.process(Timeout())
-            t1=datetime.now()
-            if t1>t0+dt:
-                print("State: %s %s"%(self.state,self.volatile_state))
-                t0=t1
-            await asyncio.sleep(0.01)
