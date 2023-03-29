@@ -150,7 +150,7 @@ class Test(unittest.TestCase):
         self.assertEqual(messages[-1].matchIndex, 10)
         self.assertEqual(len(fsm.state.log),10)
 
-    def test_follower_append_entries_7b(self):
+    def test_follower_append_entries_7c(self):
         # leader: 1,1,1,4,4,5,5,6,6,6
         messages=[]
         on_send = lambda y: messages.append(y)
