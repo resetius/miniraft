@@ -69,7 +69,8 @@ class Node:
         try:
             if self.writer:
                 await self.writer.drain()
-        except:
+        except Exception as ex:
+            print("Exception: %s"%(ex))
             self._reconnect()
 
     async def connect(self):

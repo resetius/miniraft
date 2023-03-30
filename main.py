@@ -1,8 +1,8 @@
 import asyncio
 import sys
-from node import *
-from raft import *
-from net import *
+from node import Node
+from raft import Raft
+from net import Net
 
 async def main():
     nodes = {}

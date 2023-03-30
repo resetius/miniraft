@@ -1,10 +1,7 @@
 import asyncio
 import sys
-from messages import *
-from node import *
-
-async def handler(reader, writer):
-    pass
+from messages import CommandRequest
+from node import Node
 
 async def main():
     servers = [(1,"::1",8888),(2,"::1",8889),(3,"::1",8890)]

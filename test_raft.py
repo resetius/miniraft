@@ -1,7 +1,8 @@
 import unittest
-import datetime
-from raft import *
-from timesource import *
+from datetime import timedelta,datetime
+from raft import Raft,Result,State,VolatileState,LogEntry
+from timesource import FakeTimeSource
+from messages import Timeout,AppendEntriesRequest,RequestVoteRequest,RequestVoteResponse
 
 class FakeNode:
     def __init__(self, on_send=None):
@@ -240,9 +241,8 @@ class Test(unittest.TestCase):
 
     def test_candidate_vote_request_big(self):
         raft = self._raft()
-        ts=raft.ts
         raft.become(raft.candidate)
-        result = raft.process(RequestVoteRequest(2, 1, 3, 2, 1, 1))
+        raft.process(RequestVoteRequest(2, 1, 3, 2, 1, 1))
         self.assertEqual(raft.state_func, raft.follower)
 
     def test_candidate_vote_after_start(self):

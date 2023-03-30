@@ -1,8 +1,8 @@
 import pickle
 import struct
 from dataclasses import dataclass, field
-from datetime import *
-from typing import *
+from datetime import timedelta
+from typing import List
 
 @dataclass(frozen=True)
 class LogEntry:
