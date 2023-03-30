@@ -1,13 +1,9 @@
-import pickle
-import struct
 import datetime
-import asyncio
 from collections import defaultdict
 from dataclasses import dataclass,field
-from messages import *
-from typing import *
-from timesource import *
-from node import *
+from messages import LogEntry,Timeout,AppendEntriesRequest,AppendEntriesResponse,CommandRequest,CommandResponse,RequestVoteRequest,RequestVoteResponse
+from typing import List,Dict,Any
+from timesource import TimeSource
 
 @dataclass(frozen=True,init=True)
 class State:
@@ -16,7 +12,8 @@ class State:
     log: List[LogEntry] = field(default_factory=list)
 
     def log_term(self, index: int = -1):
-        if index < 0: index = len(self.log)
+        if index < 0:
+            index = len(self.log)
         if index < 1 or index > len(self.log):
             return 0
         else:
@@ -147,7 +144,7 @@ class Raft:
         )
 
     def _create_append_entries(self, state, volatile_state, nodeId):
-        prevIndex = volatile_state.nextIndex[nodeId] - 1;
+        prevIndex = volatile_state.nextIndex[nodeId] - 1
         lastIndex = min(prevIndex+1,len(state.log))
         if volatile_state.matchIndex[nodeId]+1 < volatile_state.nextIndex[nodeId]:
             lastIndex = prevIndex
