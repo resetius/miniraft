@@ -1,6 +1,7 @@
 from datetime import datetime,timedelta
 import asyncio
 from messages import Timeout
+from node import Sender,Receiver
 
 class Net:
     def __init__(self, nodes, raft):

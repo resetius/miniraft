@@ -231,24 +231,26 @@ class Raft:
                     messages=[self._create_append_entries(state, volatile_state, nodeId) for nodeId in self.nodes.keys()]
                 )
         elif isinstance(message, AppendEntriesResponse):
+            # TODO: test
             if message.term == state.currentTerm:
                 nodeId=message.src
                 if message.success:
                     matchIndex = max(volatile_state.matchIndex[nodeId], message.matchIndex)
                     return Result(
-                        next_volatile_state=volatile_state.with_match_index({nodeId: matchIndex}).with_next_index({nodeId: message.matchIndex+1}).with_commit_advance(self.nservers,len(state.log))
+                        next_volatile_state=volatile_state.with_match_index({nodeId: matchIndex}).with_next_index({nodeId: message.matchIndex+1}).with_commit_advance(self.nservers,len(state.log),state)
                     )
                 else:
                     return Result(
                         next_volatile_state=volatile_state.with_next_index({nodeId: max(1, volatile_state.nextIndex[nodeId]-1)})
                     )
         elif isinstance(message, CommandRequest):
+            # TODO: test
             # client request
             log=state.log
             log.append(LogEntry(term=state.currentTerm,data=message.data))
             return Result(
                 next_state=State(currentTerm=state.currentTerm, votedFor=state.votedFor, log=log),
-                next_volatile_state=volatile_state.with_commit_advance(self.nservers,len(log)),
+                next_volatile_state=volatile_state.with_commit_advance(self.nservers,len(log),state),
                 message=CommandResponse()
             )
         elif isinstance(message, RequestVoteRequest):
